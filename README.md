@@ -7,9 +7,9 @@ NOTE: The example doesn't fully work yet !!
 0. Needs C++17 an clang
 1. Download and install picotls and picoquic 
 2. In the same parent directory, clone this repo and run 
-    2.1 make all
-    2.2 make client
-    2.3 make server
+    - make all
+    - make client
+    - make server
     
     
     

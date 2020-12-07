@@ -12,3 +12,11 @@ NOTE: The example doesn't fully work yet !!
     
     
     
+# Notes
+1. cmd/ - has client and server examples
+2. src/transportMananger has application threads and queues (sender/receiver)
+    for shuflfing data between the application and quic transport layer ( please see below)
+3. src/netTransportQuic.cc implements picoquic transport thread
+   which deals with creating sockets, read from application queue or from socket.
+   
+   

@@ -84,12 +84,12 @@ bool
 NetTransportUDP::doRecvs(Packet& packet)
 {
 
-	/*struct sockaddr_in sin;
-	socklen_t len = sizeof(sin);
-	if (getsockname(fd, (struct sockaddr *)&sin, &len) == -1)
-		perror("getsockname");
-	else
-		printf("port number %d\n", ntohs(sin.sin_port));*/
+  /*struct sockaddr_in sin;
+  socklen_t len = sizeof(sin);
+  if (getsockname(fd, (struct sockaddr *)&sin, &len) == -1)
+          perror("getsockname");
+  else
+          printf("port number %d\n", ntohs(sin.sin_port));*/
 
   const int dataSize = 1500;
   bytes buffer;
@@ -98,8 +98,8 @@ NetTransportUDP::doRecvs(Packet& packet)
   memset(&remoteAddr, 0, sizeof(remoteAddr));
   socklen_t remoteAddrLen = sizeof(remoteAddr);
   int rLen = recvfrom(fd,
-											buffer.data(),
-											buffer.size(),
+                      buffer.data(),
+                      buffer.size(),
                       0 /*flags*/,
                       (struct sockaddr*)&remoteAddr,
                       &remoteAddrLen);
@@ -127,7 +127,7 @@ NetTransportUDP::doRecvs(Packet& packet)
   }
 
   if (rLen == 0) {
-   return false;
+    return false;
   }
 
   buffer.resize(rLen);
@@ -219,7 +219,7 @@ NetTransportUDP::NetTransportUDP(uint16_t sfuPort)
     assert(0); // TODO
   }
 
-	// set for re-use
+  // set for re-use
   int one = 1;
   int err =
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&one, sizeof(one));
@@ -249,5 +249,4 @@ NetTransportUDP::NetTransportUDP(uint16_t sfuPort)
   }
 
   std::cout << "UdpSocket: port " << sfuPort << ", fd " << fd << std::endl;
-
 }

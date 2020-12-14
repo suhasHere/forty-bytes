@@ -11,9 +11,9 @@
 
 #include <bytes/bytes.h>
 
-#include "transport.hh"
-#include "packet.h"
 #include "netTransportQUIC.hh"
+#include "packet.h"
+#include "transport.hh"
 
 using namespace bytes_ns;
 namespace pico_sample {

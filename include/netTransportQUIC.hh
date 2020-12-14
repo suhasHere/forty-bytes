@@ -10,8 +10,8 @@
 #include <thread>
 
 #include "netTransportUDP.hh"
-#include "transport.hh"
 #include "packet.h"
+#include "transport.hh"
 
 #include <picoquic.h>
 #include <picoquic_utils.h>
@@ -116,7 +116,6 @@ public:
     struct sockaddr_storage server_address;
     socklen_t server_address_len;
   };
-
 
 protected:
   const bool m_isServer;

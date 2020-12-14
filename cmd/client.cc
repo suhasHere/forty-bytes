@@ -8,8 +8,7 @@ using namespace pico_sample;
 int main() {
 
 	const uint8_t forty_bytes[] = {0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9};
-	auto data = bytes(forty_bytes, forty_bytes+ sizeof(forty_bytes));
-	ClientTransportManager transportManager("localhost", 4443);
+	ClientTransportManager transportManager("localhost", 5004);
 	while(!transportManager.transport_ready()) {
 		std::this_thread::sleep_for(std::chrono::seconds (2));
 	}
@@ -18,7 +17,8 @@ int main() {
 	int num_to_send = 40;
 
   do {
-    transportManager.send(data);
+		auto data = bytes(forty_bytes, forty_bytes+ sizeof(forty_bytes));
+		transportManager.send(data);
     num_to_send--;
   } while(num_to_send > 0);
 

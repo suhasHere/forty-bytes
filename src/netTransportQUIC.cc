@@ -47,19 +47,34 @@ static NetTransportQUIC* transportGlobalRef;
 /// Socket Helpers
 ///
 
+static void
+print_sock_address(const std::string& prefix, struct sockaddr_storage* addr)
+{
+  std::string host;
+  host.reserve(NI_MAXHOST);
+  std::string port;
+  port.reserve(NI_MAXSERV);
+  int ret = getnameinfo((struct sockaddr*)addr,
+                        sizeof(struct sockaddr_storage),
+                        host.data(),
+                        host.size(),
+                        port.data(),
+                        port.size(),
+                        NI_NUMERICHOST | NI_NUMERICSERV);
+  assert(ret == 0);
+  std::cout << prefix << " Host:" << host << ", Port:" << port << std::endl;
+}
+
 static int
 socket_bind_to_port(int sd, int af, int port)
 {
-  // bind to the port
-  struct sockaddr_storage sa;
-  int addr_length = 0;
-  memset(&sa, 0, sizeof(sa));
   if (af == AF_INET) {
-    struct sockaddr_in* s4 = (struct sockaddr_in*)&sa;
-    s4->sin_port = port;
-    s4->sin_addr.s_addr = INADDR_ANY;
-    addr_length = sizeof(struct sockaddr_in);
-    return bind(sd, (struct sockaddr*)&sa, addr_length);
+    struct sockaddr_in server_addr;
+    memset((char*)&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_port = htons(port);
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    return bind(sd, (struct sockaddr*)&server_addr, sizeof(server_addr));
   } else {
     assert(af == AF_INET);
   }
@@ -106,10 +121,51 @@ NetTransportQUIC::setup_server_socket(int af, uint16_t port)
     setsockopt(sd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
   assert(err == 0);
 
+  std::cout << "Server socket port " << port << std::endl;
   err = socket_bind_to_port(sd, af, port);
   assert(err == 0);
 
   return sd;
+}
+
+// read from socket
+bool
+NetTransportQUIC::do_socket_read(bytes& buffer, sockaddr_in* remote_addr)
+{
+  const int dataSize = 1500;
+  buffer.reserve(dataSize);
+
+  struct sockaddr_in remoteAddr;
+  memset(&remoteAddr, 0, sizeof(remoteAddr));
+  socklen_t remoteAddrLen = sizeof(remoteAddr);
+
+  int bytes_recv = recvfrom(fd,
+                            buffer.data(),
+                            buffer.size(),
+                            0 /*flags*/,
+                            (struct sockaddr*)&remoteAddr,
+                            &remoteAddrLen);
+  if (bytes_recv < 0) {
+    int e = errno;
+    if (e == EAGAIN) {
+      // timeout on read
+      std::clog << "timeout on read\n";
+      return false;
+    } else {
+      std::cerr << "reading from UDP socket got error: " << strerror(e)
+                << std::endl;
+      assert(0); // TODO
+    }
+  }
+
+  if (bytes_recv == 0) {
+    return false;
+  } else {
+    assert(0);
+  }
+
+  buffer.resize(bytes_recv);
+  return true;
 }
 
 int
@@ -342,22 +398,43 @@ NetTransportQUIC::NetTransportQUIC(TransportManager* t,
   , connectionInitialized(false)
 {
   std::cout << "Quic Client Transport" << std::endl;
-  // setup UDP socket
-  fd = setup_client_socket(AF_INET);
+  udp_socket = new NetTransportUDP{sfuName, sfuPort};
+  assert(udp_socket);
+  fd =  udp_socket->fd;
+
+  // TODO: remove the duplication
+  std::string sPort = std::to_string(htons(sfuPort));
+  struct addrinfo hints = {}, *address_list = nullptr;
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_protocol = IPPROTO_UDP;
+  int err = getaddrinfo(sfuName.c_str(), sPort.c_str(), &hints, &address_list);
+  if (err) {
+    assert(0);
+  }
+  struct addrinfo *item = nullptr, *found_addr = nullptr;
+  for (item = address_list; item != nullptr; item = item->ai_next) {
+    if (item->ai_family == AF_INET && item->ai_socktype == SOCK_DGRAM &&
+        item->ai_protocol == IPPROTO_UDP) {
+      found_addr = item;
+      break;
+    }
+  }
+
+  if (found_addr == nullptr) {
+    assert(0);
+  }
+
+  struct sockaddr_in* ipv4_dest =
+    (struct sockaddr_in*)&quic_client_ctx.server_address;
+  memcpy(ipv4_dest, found_addr->ai_addr, found_addr->ai_addrlen);
+  ipv4_dest->sin_port = htons(sfuPort);
+  quic_client_ctx.server_address_len = sizeof(quic_client_ctx.server_address);
+  quic_client_ctx.server_name = sfuName;
+  quic_client_ctx.port = sfuPort;
 
   int ret = picoquic_get_local_address(fd, &local_address);
   assert(ret == 0);
-
-  quic_client_ctx.server_name = sfuName;
-  quic_client_ctx.port = sfuPort;
-  int is_name = 0;
-  ret = picoquic_get_server_address(
-    sfuName.c_str(),
-    sfuPort,
-    reinterpret_cast<sockaddr_storage*>(&quic_client_ctx.server_address),
-    &is_name);
-  assert(ret == 0);
-  quic_client_ctx.server_address_len = sizeof(struct sockaddr_storage);
 
   // create quic client context
   auto ticket_store_filename = "token-store.bin";
@@ -396,6 +473,9 @@ NetTransportQUIC::NetTransportQUIC(TransportManager* t,
     memset(&local_address, 0, sizeof(struct sockaddr_storage));
     fprintf(stderr, "Could not read local address.\n");
   }
+
+  print_sock_address("Local Address", &local_address);
+	udp_socket = new NetTransportUDP{ sfuName, sfuPort };
   // start the quic thread
   quicTransportThread = std::thread(quicTransportThreadFunc, this);
 }
@@ -449,14 +529,9 @@ NetTransportQUIC::NetTransportQUIC(TransportManager* t, uint16_t sfuPort)
 
   picoquic_set_log_level(quicHandle, 2);
 
-  fd = setup_server_socket(AF_INET, sfuPort);
-  int ret = picoquic_get_local_address(fd, &local_address);
-  assert(ret == 0);
+  std::cout << "Setting up udp socket " << std::endl;
 
-  if (picoquic_get_local_address(fd, &local_address) != 0) {
-    memset(&local_address, 0, sizeof(struct sockaddr_storage));
-    fprintf(stderr, "Could not read local address.\n");
-  }
+  udp_socket = new NetTransportUDP{ sfuPort };
   quicTransportThread = std::thread(quicTransportThreadFunc, this);
 }
 
@@ -475,169 +550,122 @@ NetTransportQUIC::runQuicProcess()
     connectionInitialized = true;
   }
 
-  int client_receive_loop = 0;
-  int client_send_loop = 0;
-  uint64_t curr_time = 0;
-  int if_index = -1;
-  picoquic_connection_id_t log_cid;
-  picoquic_cnx_t* last_cnx = NULL;
-  const int dataSize = 1500;
+  int recv_loop = 0;
+  int send_loop = 0;
+	picoquic_quic_t* quic = quicHandle;
+	int if_index = -1;
+	picoquic_connection_id_t log_cid;
+	picoquic_cnx_t* last_cnx = nullptr;
 
-  picoquic_quic_t* quic = quicHandle;
+	while (!transportManager->shutDown) {
+		// run socket read bounded to 64
+  	while(recv_loop < 64) {
+			Packet packet;
 
-  int ret = 0;
-  while (!transportManager->shutDown) {
-    std::string buffer(dataSize, 0);
-    struct sockaddr_in peer_addr;
-    memset(&peer_addr, 0, sizeof(peer_addr));
-    socklen_t peer_addr_len = sizeof(peer_addr);
-    int rLen = recvfrom(fd,
-                        buffer.data(),
-                        buffer.size(),
-                        0 /*flags*/,
-                        (struct sockaddr*)&peer_addr,
-                        &peer_addr_len);
-    curr_time = picoquic_get_quic_time(quicHandle);
-    client_receive_loop++;
+			recv_loop++;
+			auto got = udp_socket->doRecvs(packet);
+			if (!got) {
+				continue;
+			}
 
-    if (rLen > 0) {
-      std::cout << "received data " << rLen << " bytes\n";
-      buffer.resize(rLen);
-      if (local_port == 0) {
-        if (picoquic_get_local_address(fd, &local_address) != 0) {
-          memset(&local_address, 0, sizeof(struct sockaddr_storage));
-          fprintf(stderr, "Could not read local address.\n");
-        }
-        // todo: support AF_INET6
-        local_port = ((struct sockaddr_in*)&local_address)->sin_port;
-        std::cout << "Found local port  " << local_port << std::endl;
-      }
+			std::cout << "Recvd data from net:" << packet.data.size() << " bytes\n";
 
-      // submit the packet
-      ret = picoquic_incoming_packet(quic,
-                                     reinterpret_cast<uint8_t*>(buffer.data()),
-                                     buffer.size(),
-                                     (struct sockaddr*)&local_address,
-                                     (struct sockaddr*)&peer_addr,
-                                     -1,
-                                     0,
-                                     curr_time);
-      assert(ret == 0);
-      int send_length = 0;
-      std::string send_buffer;
-      send_buffer.resize(1536);
-      ret = picoquic_prepare_next_packet(
-        quicHandle,
-        curr_time,
-        reinterpret_cast<uint8_t*>(send_buffer.data()),
-        send_buffer.size(),
-        reinterpret_cast<size_t*>(&send_length),
-        reinterpret_cast<sockaddr_storage*>(&peer_addr),
-        reinterpret_cast<sockaddr_storage*>(&local_address),
-        &if_index,
-        &log_cid,
-        &last_cnx);
+			// let the quic stack know of the incoming packet
+			uint64_t curr_time = picoquic_get_quic_time(quicHandle);
+			if (local_port == 0) {
+				if (picoquic_get_local_address(fd, &local_address) != 0) {
+					memset(&local_address, 0, sizeof(struct sockaddr_storage));
+					fprintf(stderr, "Could not read local address.\n");
+				}
+				// todo: support AF_INET6
+				local_port = ((struct sockaddr_in*)&local_address)->sin_port;
+				std::cout << "Found local port  " << local_port << std::endl;
+			}
 
-      assert(ret == 0);
-      if (ret == PICOQUIC_ERROR_DISCONNECTED) {
-        std::cout
-          << "PICOQUIC_ERROR_DISCONNECTED: on call to prepare next packet\n";
-        ret = 0;
-        picoquic_delete_cnx(cnx_client);
-        fflush(stdout);
-        break;
-      }
-      if (send_length > 0) {
-        std::cout << "prepare_next_packet: send_length " << send_length
-                  << std::endl;
-        int sock_err = 0;
-        int sock_ret =
-          picoquic_send_through_socket(fd,
-                                       (struct sockaddr*)&peer_addr,
-                                       (struct sockaddr*)&local_address,
-                                       if_index,
-                                       send_buffer.data(),
-                                       (int)send_length,
-                                       &sock_err);
-        assert(sock_err == 0);
-      }
-    }
+			int ret = picoquic_incoming_packet(
+							quic,
+							reinterpret_cast<uint8_t*>(packet.data.data()),
+							packet.data.size(),
+							(struct sockaddr*)&local_address,
+							(struct sockaddr*)&packet.addr_len,
+							-1,
+							0,
+							curr_time);
+			assert(ret == 0);
 
-    // send loop
-    if (rLen == 0 || client_receive_loop > 64) {
-      client_receive_loop = 0;
-      client_send_loop = 0;
-      int send_length = 0;
-      int send_timeout_loop_cnt = 0;
-      while (client_send_loop < 64) {
-        client_send_loop++;
-        buffer.clear();
-        buffer.reserve(1500);
-        auto maybe_data = transportManager->getDataToSendToNet();
-        if (!maybe_data.has_value()) {
-          if (send_timeout_loop_cnt == 5) {
-            break; // move back to the recv loop
-          }
-          std::this_thread::sleep_for(std::chrono::milliseconds(2));
-          send_timeout_loop_cnt++;
-          continue;
-        }
+  	} // recv_loop
 
-        if (maybe_data.has_value() && client_send_loop <= 64) {
-          // post the datagram
-          picoquic_cnx_t* cnx = nullptr;
-          if (cnx_client == nullptr) {
-            cnx = picoquic_get_earliest_cnx_to_wake(quic, current_time);
-          } else {
-            cnx = cnx_client;
-          }
-          auto data = std::move(maybe_data.value());
-          std::cout << "enqueueing datagram " << data.size() << std::endl;
-          ret = picoquic_queue_datagram_frame(cnx, data.size(), data.data());
+  	recv_loop = 0;
+  	if(m_isServer) {
+  		// temporary - run server in recv mode only
+			continue;
+  	}
 
-          assert(ret == 0);
-          send_length = 0;
-          ret = picoquic_prepare_next_packet(
-            quicHandle,
-            curr_time,
-            reinterpret_cast<uint8_t*>(buffer.data()),
-            buffer.size(),
-            reinterpret_cast<size_t*>(&send_length),
-            (m_isServer) ? reinterpret_cast<sockaddr_storage*>(&peer_addr)
-                         : quic_client_ctx.server_address,
-            reinterpret_cast<sockaddr_storage*>(&local_address),
-            &if_index,
-            &log_cid,
-            &last_cnx);
 
-          assert(ret == 0);
-          if (ret == PICOQUIC_ERROR_DISCONNECTED) {
-            std::cout << "PICOQUIC_ERROR_DISCONNECTED: on call to prepare "
-                         "next packet\n";
-            ret = 0;
-            fflush(stdout);
-            break;
-          }
+  	// run the send loop
+		int send_loop_retry_cnt = 0;
+		while(send_loop < 64) {
+			send_loop++;
+			auto maybe_data = transportManager->getDataToSendToNet();
+			if (!maybe_data.has_value()) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(2));
+				if (send_loop_retry_cnt == 5) {
+					break; // retry recv loop again
+				}
+				send_loop_retry_cnt++;
+				continue;
+			}
 
-          if (send_length > 0) {
-            std::cout << "prepare_next_packet (in send loop): send_length "
-                      << send_length << std::endl;
-            int sock_err = 0;
-            int sock_ret =
-              picoquic_send_through_socket(fd,
-                                           (struct sockaddr*)&peer_addr,
-                                           (struct sockaddr*)&local_address,
-                                           if_index,
-                                           buffer.data(),
-                                           (int)send_length,
-                                           &sock_err);
-            assert(sock_err == 0);
-          }
-          client_send_loop++;
-        }
-      } // end while send loop
-    }   // send condition
-  }     // recv + send loop
+			uint64_t curr_time_send = picoquic_current_time();
+			// post the datagram to quic stack
+			picoquic_cnx_t* cnx = nullptr;
+			if (cnx_client == nullptr) {
+				cnx = picoquic_get_earliest_cnx_to_wake(quic, curr_time_send);
+			} else {
+				cnx = cnx_client;
+			}
+			auto data = std::move(maybe_data.value());
+			std::cout << "enqueueing datagram " << data.size() << std::endl;
+			int ret = picoquic_queue_datagram_frame(cnx, data.size(), data.data());
+			assert(ret == 0);
+			// verify if there are any packets from sender
+			int send_length = 0;
+			bytes quic_packet;
+			quic_packet.reserve(1500);
+			ret = picoquic_prepare_next_packet(
+							quicHandle,
+							curr_time_send,
+							quic_packet.data(),
+							quic_packet.size(),
+							reinterpret_cast<size_t*>(&send_length),
+							&quic_client_ctx.server_address,
+							reinterpret_cast<sockaddr_storage*>(&local_address),
+							&if_index,
+							&log_cid,
+							&last_cnx);
+			assert(ret == 0);
+
+			if (send_length > 0) {
+				std::cout << "prepare_next_packet (in send loop): send_length "
+									<< send_length << std::endl;
+				int sock_ret = picoquic_send_through_socket(
+								fd,
+								reinterpret_cast<sockaddr *>(&quic_client_ctx.server_address),
+								(struct sockaddr*)&local_address,
+								if_index,
+								reinterpret_cast<const char*>(
+												reinterpret_cast<uint8_t*>(quic_packet.data())),
+								(int)send_length,
+								&sock_ret);
+				assert(sock_ret == 0);
+			} else {
+				std::cout << "prepare_next_packet - size 0\n";
+			}
+
+		} // send_loop
+
+		send_loop = 0;
+  } // !transport_shutdown
 
   std::cout << "DONE" << std::endl;
   assert(0);

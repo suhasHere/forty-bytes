@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <bytes/bytes.h>
 #include <cassert>
 #include <cstdint>
 #include <mutex>
@@ -8,11 +9,14 @@
 #include <string>
 #include <thread>
 
+#include "netTransportUDP.hh"
 #include "transport.hh"
+#include "packet.h"
 
 #include <picoquic.h>
 #include <picoquic_utils.h>
 
+using namespace bytes_ns;
 namespace pico_sample {
 
 class TransportManager;
@@ -109,9 +113,10 @@ public:
     std::string server_name;
     uint16_t port;
     std::string sni;
-    struct sockaddr_storage* server_address;
+    struct sockaddr_storage server_address;
     socklen_t server_address_len;
   };
+
 
 protected:
   const bool m_isServer;
@@ -122,6 +127,7 @@ private:
 
   int setup_client_socket(int af);
   int setup_server_socket(int af, uint16_t port);
+  bool do_socket_read(bytes& buffer, sockaddr_in* remote_addr);
 
   QuicClientContext quic_client_ctx;
 
@@ -139,6 +145,8 @@ private:
 
   picoquic_cnx_t* cnx_client = nullptr;
   picoquic_cnx_t* cnx_server = nullptr;
+
+  NetTransportUDP* udp_socket;
 };
 
 } // namespace neo_media

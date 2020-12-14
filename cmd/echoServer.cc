@@ -7,14 +7,13 @@ using namespace pico_sample;
 
 int main()
 {
-    ServerTransportManager transport(4443);
+    ServerTransportManager transport;
 
     while (1)
     {
         if (transport.empty())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            //std::clog << "E";
             continue;
         }
 

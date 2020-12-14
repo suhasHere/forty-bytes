@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <cassert>
@@ -12,8 +11,9 @@
 
 #include <bytes/bytes.h>
 
-#include "netTransportQUIC.hh"
 #include "transport.hh"
+#include "packet.h"
+#include "netTransportQUIC.hh"
 
 using namespace bytes_ns;
 namespace pico_sample {
@@ -52,11 +52,11 @@ public:
 
   bytes recv();
 
-  bool recvDataFromNet(bytes& data_in,
-                       struct sockaddr* addr,
-                       socklen_t addrLen);
+  virtual bool recvDataFromNet(bytes& data_in,
+                               struct sockaddr* addr,
+                               socklen_t addrLen);
 
-  std::optional<bytes> getDataToSendToNet();
+  virtual std::optional<bytes> getDataToSendToNet();
 
   bool shutDown;
 

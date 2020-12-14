@@ -6,9 +6,13 @@ class NetTransport
 {
 
 public:
+  // Indicate if the transport can be used to send/recv
   virtual bool ready() const = 0;
+  // Close the transport
   virtual void close() = 0;
+  // Retrieve the data and send over the network
   virtual bool doSends() = 0;
+  // Read the data off the network and save it to the queue
   virtual bool doRecvs() = 0;
 };
 

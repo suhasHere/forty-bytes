@@ -14,7 +14,7 @@ int main() {
 	}
 	std::cout << "Transport is ready" << std::endl;
 	// Send forty_bytes packet 10 seconds with 50 ms apart
-	int num_to_send = 40;
+	int num_to_send = 1000;
 
   do {
 		auto data = bytes(forty_bytes, forty_bytes+ sizeof(forty_bytes));

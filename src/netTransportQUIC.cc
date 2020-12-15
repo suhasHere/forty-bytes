@@ -628,15 +628,14 @@ NetTransportQUIC::runQuicProcess()
       int ret = picoquic_queue_datagram_frame(cnx, data.size(), data.data());
       assert(ret == 0);
       // verify if there are any packets from sender
-      int send_length = 0;
-      bytes quic_packet;
-      quic_packet.reserve(1500);
+      size_t send_length = 0;
+      uint8_t send_buffer[1500];
       ret = picoquic_prepare_next_packet(
         quicHandle,
         curr_time_send,
-        quic_packet.data(),
-        quic_packet.size(),
-        reinterpret_cast<size_t*>(&send_length),
+				send_buffer,
+        sizeof(send_buffer),
+        &send_length,
         &quic_client_ctx.server_address,
         reinterpret_cast<sockaddr_storage*>(&local_address),
         &if_index,
@@ -652,8 +651,7 @@ NetTransportQUIC::runQuicProcess()
           reinterpret_cast<sockaddr*>(&quic_client_ctx.server_address),
           (struct sockaddr*)&local_address,
           if_index,
-          reinterpret_cast<const char*>(
-            reinterpret_cast<uint8_t*>(quic_packet.data())),
+					reinterpret_cast<const char *>(send_buffer),
           (int)send_length,
           &sock_ret);
         assert(sock_ret == 0);

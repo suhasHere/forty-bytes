@@ -4,7 +4,6 @@
 #include <transport_manager.hh>
 
 using namespace pico_sample;
-
 int main() {
 
 	const uint8_t forty_bytes[] = {0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9};
@@ -18,8 +17,10 @@ int main() {
 
   do {
 		auto data = bytes(forty_bytes, forty_bytes+ sizeof(forty_bytes));
+		std::cout<< "sending: " << to_hex(data) << std::endl;
 		transportManager.send(data);
     num_to_send--;
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
   } while(num_to_send > 0);
 
   while(1)

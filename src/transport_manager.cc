@@ -106,7 +106,6 @@ ClientTransportManager::send(bytes& data)
 {
   {
     std::lock_guard<std::mutex> lock(sendQMutex);
-    std::clog << "CP";
     sendQ.push(std::move(data));
     // TODO - check Q not too deep
   }

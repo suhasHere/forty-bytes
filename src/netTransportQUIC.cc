@@ -24,15 +24,11 @@
 #include "transport_manager.hh"
 
 #include "picoquic.h"
-#include "picoquic_binlog.h"
 #include "picoquic_internal.h"
 #include "picoquic_logger.h"
-#include "picoquic_packet_loop.h"
-#include "picoquic_unified_log.h"
 #include "picoquic_utils.h"
 #include "picosocks.h"
 #include "picotls.h"
-#include "tls_api.h"
 
 using namespace pico_sample;
 #define SERVER_CERT_FILE "cert.pem"
@@ -82,7 +78,7 @@ NetTransportQUIC::datagram_callback(picoquic_cnx_t* cnx,
     ctx = new pico_sample::datagram_ctx_t{};
     ctx->transportManager = transportManagerGlobalRef;
     ctx->transport = transportGlobalRef;
-    ctx->transport->cnx_server = cnx;
+    ctx->transport->cnx = cnx;
     ctx->is_auto_alloc = 1;
     picoquic_set_callback(cnx, &NetTransportQUIC::datagram_callback, ctx);
   } else {
@@ -230,26 +226,25 @@ NetTransportQUIC::quic_start_connection()
   // create client connection context
   std::cout << "starting client connection to " << quic_client_ctx.sni
             << std::endl;
-  cnx_client =
-    picoquic_create_cnx(quicHandle,
-                        picoquic_null_connection_id,
-                        picoquic_null_connection_id,
-                        (struct sockaddr*)&quic_client_ctx.server_address,
-                        picoquic_get_quic_time(quicHandle),
-                        0,
-                        quic_client_ctx.sni.data(),
-                        alpn.data(),
-                        1);
+  cnx = picoquic_create_cnx(quicHandle,
+                            picoquic_null_connection_id,
+                            picoquic_null_connection_id,
+                            (struct sockaddr*)&quic_client_ctx.server_address,
+                            picoquic_get_quic_time(quicHandle),
+                            0,
+                            quic_client_ctx.sni.data(),
+                            alpn.data(),
+                            1);
 
-  assert(cnx_client != nullptr);
+  assert(cnx != nullptr);
 
   auto* datagram_ctx = new datagram_ctx_t{};
   datagram_ctx->transportManager = transportManager;
   datagram_ctx->transport = this;
-  picoquic_set_callback(cnx_client, datagram_callback, (void*)datagram_ctx);
-  cnx_client->local_parameters.max_datagram_frame_size = 1500;
+  picoquic_set_callback(cnx, datagram_callback, (void*)datagram_ctx);
+  cnx->local_parameters.max_datagram_frame_size = 1500;
 
-  int ret = picoquic_start_client_cnx(cnx_client);
+  int ret = picoquic_start_client_cnx(cnx);
   assert(ret == 0);
   std::cout << "Started Quic Client Connection" << std::endl;
   return ret;
@@ -495,13 +490,6 @@ NetTransportQUIC::runQuicProcess()
 
     uint64_t curr_time_send = picoquic_current_time();
     if (maybe_data.has_value()) {
-      // post the datagram to quic stack
-      picoquic_cnx_t* cnx = nullptr;
-      if (cnx_client == nullptr) {
-        cnx = picoquic_get_earliest_cnx_to_wake(quic, curr_time_send);
-      } else {
-        cnx = cnx_client;
-      }
       auto data = std::move(maybe_data.value());
       // std::cout << "enqueueing datagram " << data.size() << std::endl;
       int ret = picoquic_queue_datagram_frame(cnx, data.size(), data.data());

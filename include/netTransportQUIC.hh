@@ -145,8 +145,7 @@ private:
   // make it state
   bool connectionInitialized;
 
-  picoquic_cnx_t* cnx_client = nullptr;
-  picoquic_cnx_t* cnx_server = nullptr;
+  picoquic_cnx_t* cnx;
 
   NetTransportUDP* udp_socket;
 };

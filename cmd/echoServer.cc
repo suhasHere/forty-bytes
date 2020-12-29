@@ -19,6 +19,7 @@ int main()
 
         bytes data = transport.recv();
         std::clog << "Received " << to_hex(data) << "\n";
+        transport.send(data);
     }
 
     return 0;

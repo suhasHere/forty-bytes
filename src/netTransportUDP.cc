@@ -47,14 +47,12 @@ NetTransportUDP::close()
 bool
 NetTransportUDP::doSends(const Packet& packet)
 {
-
-  auto buffer = std::move(packet.data);
   int numSent = sendto(fd,
-                       buffer.data(),
-                       buffer.size(),
+                       packet.data.data(),
+                       packet.data.size(),
                        0 /*flags*/,
                        (struct sockaddr*)&packet.addr,
-                       packet.addr_len);
+                       sizeof(sockaddr_in));
   if (numSent < 0) {
 #if defined(_WIN32)
     int error = WSAGetLastError();
@@ -73,7 +71,7 @@ NetTransportUDP::doSends(const Packet& packet)
               << std::endl;
     assert(0); // TODO
 #endif
-  } else if (numSent != (int)buffer.size()) {
+  } else if (numSent != (int)packet.data.size()) {
     assert(0); // TODO
   }
 
@@ -94,7 +92,7 @@ NetTransportUDP::doRecvs(Packet& packet)
   const int dataSize = 1500;
   bytes buffer;
   buffer.resize(dataSize);
-  struct sockaddr_in remoteAddr;
+  struct sockaddr_storage remoteAddr;
   memset(&remoteAddr, 0, sizeof(remoteAddr));
   socklen_t remoteAddrLen = sizeof(remoteAddr);
   int rLen = recvfrom(fd,
@@ -129,7 +127,6 @@ NetTransportUDP::doRecvs(Packet& packet)
   if (rLen == 0) {
     return false;
   }
-
   buffer.resize(rLen);
   packet.data = std::move(buffer);
   packet.addr_len = remoteAddrLen;
@@ -194,8 +191,10 @@ NetTransportUDP::NetTransportUDP(std::string sfuName_in, uint16_t sfuPort_in)
   if (found_addr == NULL) {
     assert(0);
   }
-  memcpy(&sfuAddr, found_addr->ai_addr, found_addr->ai_addrlen);
-  sfuAddr.sin_port = htons(sfuPort);
+
+  struct sockaddr_in* ipv4 = (struct sockaddr_in*)&sfuAddr;
+  memcpy(ipv4, found_addr->ai_addr, found_addr->ai_addrlen);
+  ipv4->sin_port = htons(sfuPort);
   sfuAddrLen = sizeof(sfuAddr);
 }
 

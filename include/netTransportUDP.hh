@@ -37,7 +37,7 @@ public:
   bool m_isServer;
   std::string sfuName;
   uint16_t sfuPort;
-  struct sockaddr_in sfuAddr; // struct sockaddr_storage sfuAddr;
+  struct sockaddr_storage sfuAddr;
   socklen_t sfuAddrLen;
 };
 

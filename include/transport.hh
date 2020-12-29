@@ -7,7 +7,7 @@ class NetTransport
 
 public:
   // Indicate if the transport can be used to send/recv
-  virtual bool ready() const = 0;
+  virtual bool ready() = 0;
   // Close the transport
   virtual void close() = 0;
   // Retrieve the data and send over the network

@@ -14,6 +14,8 @@
 #include "transport.hh"
 
 #include <picoquic.h>
+#include <picoquic_internal.h>
+#include <picoquic_logger.h>
 #include <picoquic_utils.h>
 
 using namespace bytes_ns;
@@ -35,7 +37,7 @@ typedef enum
   picoquic_alpn_undef = 0,
   picoquic_alpn_http_0_9,
   picoquic_alpn_http_3,
-  picoquic_alpn_siduck
+  alpn_neo_media
 } picoquic_alpn_enum;
 
 typedef struct st_picoquic_alpn_list_t
@@ -45,14 +47,14 @@ typedef struct st_picoquic_alpn_list_t
 } picoquic_alpn_list_t;
 
 static picoquic_alpn_list_t alpn_list[] = {
-  { picoquic_alpn_http_3, "h3-32" },  { picoquic_alpn_http_0_9, "hq-32" },
-  { picoquic_alpn_http_3, "h3-31" },  { picoquic_alpn_http_0_9, "hq-31" },
-  { picoquic_alpn_http_3, "h3-29" },  { picoquic_alpn_http_0_9, "hq-29" },
-  { picoquic_alpn_http_3, "h3-30" },  { picoquic_alpn_http_0_9, "hq-30" },
-  { picoquic_alpn_http_3, "h3-28" },  { picoquic_alpn_http_0_9, "hq-28" },
-  { picoquic_alpn_http_3, "h3-27" },  { picoquic_alpn_http_0_9, "hq-27" },
-  { picoquic_alpn_http_3, "h3" },     { picoquic_alpn_http_0_9, "hq" },
-  { picoquic_alpn_siduck, "siduck" }, { picoquic_alpn_siduck, "siduck-00" }
+  { picoquic_alpn_http_3, "h3-32" },    { picoquic_alpn_http_0_9, "hq-32" },
+  { picoquic_alpn_http_3, "h3-31" },    { picoquic_alpn_http_0_9, "hq-31" },
+  { picoquic_alpn_http_3, "h3-29" },    { picoquic_alpn_http_0_9, "hq-29" },
+  { picoquic_alpn_http_3, "h3-30" },    { picoquic_alpn_http_0_9, "hq-30" },
+  { picoquic_alpn_http_3, "h3-28" },    { picoquic_alpn_http_0_9, "hq-28" },
+  { picoquic_alpn_http_3, "h3-27" },    { picoquic_alpn_http_0_9, "hq-27" },
+  { picoquic_alpn_http_3, "h3" },       { picoquic_alpn_http_0_9, "hq" },
+  { alpn_neo_media, "proto-pq-sample" }
 };
 
 class NetTransportQUIC : public NetTransport
@@ -64,7 +66,7 @@ public:
   NetTransportQUIC(TransportManager*, uint16_t sfuPort_in);
   virtual ~NetTransportQUIC();
 
-  virtual bool ready() const { return connectionInitialized; }
+  virtual bool ready();
   virtual void close();
   virtual bool doSends();
   virtual bool doRecvs();
@@ -96,6 +98,7 @@ public:
 
   std::mutex quicConnectionReadyMutex;
   bool quicConnectionReady;
+
   std::thread quicSendDataThread;
   static int quicSendDataThreadFunc(NetTransportQUIC* netTransportQuic)
   {
@@ -134,10 +137,10 @@ private:
   picoquic_quic_t* quicHandle = nullptr;
   picoquic_cnx_t* quicConnectionHandler = nullptr;
   sockaddr_storage local_address;
+  sockaddr_storage remote_address;
   uint16_t local_port = 0;
 
   uint64_t current_time = 0;
-  int fd;
   uint16_t serverPort;
   // make it state
   bool connectionInitialized;

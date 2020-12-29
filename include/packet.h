@@ -17,8 +17,12 @@ namespace pico_sample {
 
 	struct Packet {
 		bytes data;
-		struct sockaddr_in addr;
+		struct sockaddr_storage addr;
 		socklen_t addr_len;
+
+		bool empty() {
+			return data.empty();
+		}
 	};
 
 }

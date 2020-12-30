@@ -150,7 +150,7 @@ NetTransportUDP::NetTransportUDP(std::string sfuName_in, uint16_t sfuPort_in)
 
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (fd == -1) {
-    assert(0); // TODO
+    throw std::runtime_error("socket() failed");
   }
 
   // make socket non blocking IO

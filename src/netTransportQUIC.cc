@@ -79,7 +79,6 @@ NetTransportQUIC::datagram_callback(picoquic_cnx_t* cnx,
     ctx->transportManager = transportManagerGlobalRef;
     ctx->transport = transportGlobalRef;
     ctx->transport->cnx = cnx;
-    ctx->is_auto_alloc = 1;
     picoquic_set_callback(cnx, &NetTransportQUIC::datagram_callback, ctx);
   } else {
     ret = 0;
@@ -97,24 +96,21 @@ NetTransportQUIC::datagram_callback(picoquic_cnx_t* cnx,
     case picoquic_callback_prepare_to_send:
       std::cout << "Unexpected callback " << std::endl;
       if (ctx != nullptr) {
-        if (ctx->is_auto_alloc) {
-          free(ctx);
-          ctx = nullptr;
-        }
+        free(ctx);
+        ctx = nullptr;
       }
       std::cout << "picoquic_callback_prepare_to_send" << std::endl;
       break;
     case picoquic_callback_stateless_reset:
     case picoquic_callback_close:             /* Received connection close */
     case picoquic_callback_application_close: /* Received application close */
-      if (ctx != nullptr && ctx->is_auto_alloc) {
+      if (ctx != nullptr) {
         free(ctx);
         ctx = nullptr;
       }
       std::cout << "picoquic_callback_application_close: "
                 << transport_close_reason(cnx) << std::endl;
       picoquic_set_callback(cnx, nullptr, nullptr);
-      // assert(0);
       break;
     case picoquic_callback_version_negotiation:
       break;
@@ -151,7 +147,7 @@ static size_t nb_alpn_list = sizeof(alpn_list) / sizeof(picoquic_alpn_list_t);
 picoquic_alpn_enum
 picoquic_parse_alpn_nz(char const* alpn, size_t len)
 {
-  picoquic_alpn_enum code = picoquic_alpn_undef;
+  picoquic_alpn_enum code = alpn_undef;
 
   if (alpn != NULL) {
     for (size_t i = 0; i < nb_alpn_list; i++) {
@@ -190,7 +186,7 @@ picoquic_select_alpn(picoquic_quic_t* quic, ptls_iovec_t* list, size_t count)
 
   for (size_t i = 0; i < count; i++) {
     if (picoquic_parse_alpn_nz((const char*)list[i].base, list[i].len) !=
-        picoquic_alpn_undef) {
+        alpn_undef) {
       ret = i;
       break;
     }
@@ -255,8 +251,8 @@ NetTransportQUIC::NetTransportQUIC(TransportManager* t,
                                    std::string sfuName,
                                    uint16_t sfuPort)
   : transportManager(t)
+  , quicConnectionReady(false)
   , m_isServer(false)
-  , connectionInitialized(false)
 {
   std::cout << "Quic Client Transport" << std::endl;
   udp_socket = new NetTransportUDP{ sfuName, sfuPort };
@@ -339,9 +335,9 @@ NetTransportQUIC::NetTransportQUIC(TransportManager* t,
 // server
 NetTransportQUIC::NetTransportQUIC(TransportManager* t, uint16_t sfuPort)
   : transportManager(t)
+  , quicConnectionReady(false)
   , m_isServer(true)
-  , serverPort(sfuPort)
-  , connectionInitialized(false)
+
 {
   std::cout << "Quic Server Transport" << std::endl;
   char default_server_cert_file[512];

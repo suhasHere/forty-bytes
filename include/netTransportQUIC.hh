@@ -25,18 +25,16 @@ class TransportManager;
 
 class NetTransportQUIC;
 
+// Context shared with th the underlying quic stack
 typedef struct st_datagram_ctx_t
 {
-  int is_auto_alloc;
   TransportManager* transportManager;
   NetTransportQUIC* transport;
 } datagram_ctx_t;
 
 typedef enum
 {
-  picoquic_alpn_undef = 0,
-  picoquic_alpn_http_0_9,
-  picoquic_alpn_http_3,
+  alpn_undef = 0,
   alpn_neo_media
 } picoquic_alpn_enum;
 
@@ -46,17 +44,10 @@ typedef struct st_picoquic_alpn_list_t
   char const* alpn_val;
 } picoquic_alpn_list_t;
 
-static picoquic_alpn_list_t alpn_list[] = {
-  { picoquic_alpn_http_3, "h3-32" },    { picoquic_alpn_http_0_9, "hq-32" },
-  { picoquic_alpn_http_3, "h3-31" },    { picoquic_alpn_http_0_9, "hq-31" },
-  { picoquic_alpn_http_3, "h3-29" },    { picoquic_alpn_http_0_9, "hq-29" },
-  { picoquic_alpn_http_3, "h3-30" },    { picoquic_alpn_http_0_9, "hq-30" },
-  { picoquic_alpn_http_3, "h3-28" },    { picoquic_alpn_http_0_9, "hq-28" },
-  { picoquic_alpn_http_3, "h3-27" },    { picoquic_alpn_http_0_9, "hq-27" },
-  { picoquic_alpn_http_3, "h3" },       { picoquic_alpn_http_0_9, "hq" },
-  { alpn_neo_media, "proto-pq-sample" }
-};
+static picoquic_alpn_list_t alpn_list[] = { { alpn_neo_media,
+                                              "proto-pq-sample" } };
 
+// QUIC transport
 class NetTransportQUIC : public NetTransport
 {
 public:
@@ -73,6 +64,7 @@ public:
 
   int runQuicProcess();
 
+  // callback registered with the quic stack on transport and data states
   static int datagram_callback(picoquic_cnx_t* cnx,
                                uint64_t stream_id,
                                uint8_t* bytes,
@@ -81,30 +73,13 @@ public:
                                void* callback_ctx,
                                void* v_stream_ctx);
 
-  std::thread quicThread;
-  static int quicThreadFunc(NetTransportQUIC* netTransportQuic, bool is_server)
-  {
-    if (is_server) {
-      return netTransportQuic->start_server_transport();
-    } else {
-      return netTransportQuic->start_client_transport();
-    }
-  }
-
-  int start_client_transport();
-  int start_server_transport();
-
   TransportManager* transportManager;
 
+  // Reports if the underlying quic stack is ready
+  // for application messages
   std::mutex quicConnectionReadyMutex;
   bool quicConnectionReady;
 
-  std::thread quicSendDataThread;
-  static int quicSendDataThreadFunc(NetTransportQUIC* netTransportQuic)
-  {
-    return netTransportQuic->doSends();
-  }
-  // one thread to rule them all
   std::thread quicTransportThread;
   static int quicTransportThreadFunc(NetTransportQUIC* netTransportQuic)
   {
@@ -120,31 +95,19 @@ public:
     socklen_t server_address_len;
   };
 
-protected:
-  const bool m_isServer;
-
 private:
   // Kick start Quic's connection context
   int quic_start_connection();
 
-  int setup_client_socket(int af);
-  int setup_server_socket(int af, uint16_t port);
-  bool do_socket_read(bytes& buffer, sockaddr_in* remote_addr);
-
+  const bool m_isServer;
   QuicClientContext quic_client_ctx;
 
   std::string alpn = "proto-pq-sample";
   picoquic_quic_t* quicHandle = nullptr;
-  picoquic_cnx_t* quicConnectionHandler = nullptr;
   sockaddr_storage local_address;
-  sockaddr_storage remote_address;
   uint16_t local_port = 0;
 
   uint64_t current_time = 0;
-  uint16_t serverPort;
-  // make it state
-  bool connectionInitialized;
-
   picoquic_cnx_t* cnx;
 
   NetTransportUDP* udp_socket;
